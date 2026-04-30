@@ -1,16 +1,52 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { HeroOrb } from "@/components/HeroOrb";
+import { HabitsRing } from "@/components/HabitsRing";
+import { NervousSystemPanel } from "@/components/NervousSystemPanel";
+import { MindsetRewire } from "@/components/MindsetRewire";
+import { StepsJourney } from "@/components/StepsJourney";
+import { DailyAffirmation } from "@/components/DailyAffirmation";
+import { Moon, Heart } from "lucide-react";
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const currentStep = 4;
+  const intention =
+    "A daily ritual to regulate your body, rewire your mind, and walk the 12 Steps of Magnetic Manifestation.";
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
-    </div>
+    <main className="min-h-screen">
+      <nav className="container max-w-6xl pt-8 pb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full bg-gradient-dawn shadow-glow animate-pulse-glow" />
+          <span className="font-serif text-xl tracking-wide">Magnetic</span>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Heart className="w-4 h-4" />
+          <span>Day 14 of your becoming</span>
+          <Moon className="w-4 h-4 ml-2" />
+        </div>
+      </nav>
+
+      <div className="container max-w-6xl pb-20 space-y-6">
+        <HeroOrb step={currentStep} intention={intention} />
+
+        <DailyAffirmation />
+
+        <HabitsRing />
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <NervousSystemPanel />
+          <MindsetRewire />
+        </div>
+
+        <StepsJourney currentStep={currentStep} />
+
+        <footer className="text-center pt-8 pb-2">
+          <p className="font-serif italic text-muted-foreground">
+            "What you seek is also seeking you." — Rumi
+          </p>
+        </footer>
+      </div>
+    </main>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
