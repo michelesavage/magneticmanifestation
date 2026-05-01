@@ -4,6 +4,7 @@ import { NervousSystemPanel } from "@/components/NervousSystemPanel";
 import { MindsetRewire } from "@/components/MindsetRewire";
 import { StepsJourney } from "@/components/StepsJourney";
 import { DailyAffirmation } from "@/components/DailyAffirmation";
+import { SelfCarePanel } from "@/components/SelfCarePanel";
 import { Moon, Heart } from "lucide-react";
 
 const Index = () => {
@@ -32,9 +33,10 @@ const Index = () => {
 
         <HabitsRing />
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <NervousSystemPanel />
           <MindsetRewire />
+          <SelfCarePanel />
         </div>
 
         <StepsJourney currentStep={currentStep} />
