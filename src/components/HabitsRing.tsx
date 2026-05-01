@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Droplets, Apple, Pill, Moon, Sun, Plus, Minus } from "lucide-react";
+import { Droplets, Apple, Pill, Moon, Sun, Activity, Plus, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Habit = {
@@ -18,6 +18,7 @@ const initial: Habit[] = [
   { id: "vitamins", name: "Vitamins", icon: Pill, current: 1, goal: 1, unit: "stack", tint: "from-rose to-dawn" },
   { id: "sleep", name: "Sleep", icon: Moon, current: 7, goal: 8, unit: "hours", tint: "from-indigo/80 to-lavender" },
   { id: "sunlight", name: "Sunlight", icon: Sun, current: 10, goal: 20, unit: "minutes", tint: "from-dawn-glow to-dawn" },
+  { id: "movement", name: "Movement", icon: Activity, current: 15, goal: 30, unit: "minutes", tint: "from-rose to-lavender" },
 ];
 
 export function HabitsRing() {
@@ -37,7 +38,7 @@ export function HabitsRing() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {habits.map((h) => {
           const pct = Math.min(100, (h.current / h.goal) * 100);
           const Icon = h.icon;
