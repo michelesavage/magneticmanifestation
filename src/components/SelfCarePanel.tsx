@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Sparkles, Smile, Shield, PartyPopper, Check, Lightbulb } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Sparkles, Smile, Shield, PartyPopper, Check, Lightbulb, Flame } from "lucide-react";
 
 type TabId = "rituals" | "checkin" | "boundaries" | "joy";
 
@@ -54,6 +54,86 @@ const joyPrompts = [
   "What did your younger self love that you could revisit this week?",
 ];
 
+const STORAGE_KEY = "self-care-state-v1";
+
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const dayKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const computeStreak = (dates: string[]) => {
+  if (!dates.length) return 0;
+  const set = new Set(dates);
+  let streak = 0;
+  const cur = new Date();
+  // If today not logged, start counting from yesterday so streak isn't broken mid-day
+  if (!set.has(dayKey(cur))) cur.setDate(cur.getDate() - 1);
+  while (set.has(dayKey(cur))) {
+    streak++;
+    cur.setDate(cur.getDate() - 1);
+  }
+  return streak;
+};
+
+const last7Days = () => {
+  const arr: string[] = [];
+  const d = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const t = new Date(d);
+    t.setDate(d.getDate() - i);
+    arr.push(dayKey(t));
+  }
+  return arr;
+};
+
+type Note = { text: string; date: string };
+
+type State = {
+  rituals: Record<string, boolean>;
+  boundaries: Record<string, boolean>;
+  mood: number;
+  energy: number;
+  joys: Note[];
+  ritualNotes: Note[];
+  checkinNotes: Note[];
+  boundaryNotes: Note[];
+  activity: Record<TabId, string[]>;
+  lastResetDay: string;
+};
+
+const initialState: State = {
+  rituals: {},
+  boundaries: {},
+  mood: 2,
+  energy: 2,
+  joys: [],
+  ritualNotes: [],
+  checkinNotes: [],
+  boundaryNotes: [],
+  activity: { rituals: [], checkin: [], boundaries: [], joy: [] },
+  lastResetDay: todayKey(),
+};
+
+const loadState = (): State => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initialState;
+    const parsed = { ...initialState, ...JSON.parse(raw) };
+    // Reset daily check-marks at day rollover (preserve activity history)
+    if (parsed.lastResetDay !== todayKey()) {
+      parsed.rituals = {};
+      parsed.boundaries = {};
+      parsed.lastResetDay = todayKey();
+    }
+    return parsed;
+  } catch {
+    return initialState;
+  }
+};
+
 function PromptCard({ prompts, tint = "dawn" }: { prompts: string[]; tint?: "dawn" | "sage" | "rose" | "lavender" }) {
   const [i, setI] = useState(0);
   return (
@@ -77,46 +157,126 @@ function PromptCard({ prompts, tint = "dawn" }: { prompts: string[]; tint?: "daw
   );
 }
 
+function StreakStrip({ dates, label }: { dates: string[]; label: string }) {
+  const streak = computeStreak(dates);
+  const set = new Set(dates);
+  const week = last7Days();
+  const today = todayKey();
+  return (
+    <div className="rounded-2xl bg-background/40 border border-border/50 p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="w-7 h-7 rounded-full bg-gradient-to-br from-dawn to-rose flex items-center justify-center">
+            <Flame className="w-3.5 h-3.5 text-indigo-deep" />
+          </span>
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground leading-none">{label} streak</p>
+            <p className="font-serif text-lg leading-tight">
+              {streak} {streak === 1 ? "day" : "days"}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          {week.map((d) => {
+            const on = set.has(d);
+            const isToday = d === today;
+            return (
+              <div key={d} className="flex flex-col items-center gap-1">
+                <span
+                  className={`w-5 h-5 rounded-full border transition-sacred ${
+                    on
+                      ? "bg-gradient-dawn border-transparent shadow-soft"
+                      : "bg-background/30 border-border/50"
+                  } ${isToday ? "ring-2 ring-dawn/50 ring-offset-1 ring-offset-background" : ""}`}
+                />
+                <span className="text-[10px] text-muted-foreground/70">
+                  {new Date(d).toLocaleDateString(undefined, { weekday: "narrow" })}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground/80 italic">Last 7 days · highlighted = tended</p>
+    </div>
+  );
+}
+
 export function SelfCarePanel() {
   const [active, setActive] = useState<TabId>("rituals");
+  const [state, setState] = useState<State>(initialState);
+  const [hydrated, setHydrated] = useState(false);
 
-  const [rituals, setRituals] = useState<Record<string, boolean>>({});
-  const [boundaries, setBoundaries] = useState<Record<string, boolean>>({});
-  const [mood, setMood] = useState(2);
-  const [energy, setEnergy] = useState(2);
   const [joyDraft, setJoyDraft] = useState("");
-  const [joys, setJoys] = useState<string[]>([
-    "Danced barefoot in the kitchen.",
-  ]);
   const [ritualNote, setRitualNote] = useState("");
-  const [ritualNotes, setRitualNotes] = useState<string[]>([]);
   const [checkinNote, setCheckinNote] = useState("");
   const [boundaryNote, setBoundaryNote] = useState("");
-  const [boundaryNotes, setBoundaryNotes] = useState<string[]>([]);
 
-  const toggle = (
-    map: Record<string, boolean>,
-    setMap: (m: Record<string, boolean>) => void,
-    key: string,
-  ) => setMap({ ...map, [key]: !map[key] });
+  useEffect(() => {
+    setState(loadState());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [state, hydrated]);
+
+  const markActive = (tab: TabId) =>
+    setState((s) => {
+      const today = todayKey();
+      if (s.activity[tab].includes(today)) return s;
+      return { ...s, activity: { ...s.activity, [tab]: [...s.activity[tab], today] } };
+    });
+
+  const toggleRitual = (key: string) => {
+    setState((s) => ({ ...s, rituals: { ...s.rituals, [key]: !s.rituals[key] } }));
+    markActive("rituals");
+  };
+
+  const toggleBoundary = (key: string) => {
+    setState((s) => ({ ...s, boundaries: { ...s.boundaries, [key]: !s.boundaries[key] } }));
+    markActive("boundaries");
+  };
+
+  const setMood = (i: number) => {
+    setState((s) => ({ ...s, mood: i }));
+    markActive("checkin");
+  };
+  const setEnergy = (i: number) => {
+    setState((s) => ({ ...s, energy: i }));
+    markActive("checkin");
+  };
 
   const addJoy = () => {
     if (!joyDraft.trim()) return;
-    setJoys((j) => [joyDraft.trim(), ...j]);
+    setState((s) => ({ ...s, joys: [{ text: joyDraft.trim(), date: todayKey() }, ...s.joys] }));
     setJoyDraft("");
+    markActive("joy");
   };
 
   const addRitualNote = () => {
     if (!ritualNote.trim()) return;
-    setRitualNotes((n) => [ritualNote.trim(), ...n]);
+    setState((s) => ({ ...s, ritualNotes: [{ text: ritualNote.trim(), date: todayKey() }, ...s.ritualNotes] }));
     setRitualNote("");
+    markActive("rituals");
+  };
+
+  const addCheckinNote = () => {
+    if (!checkinNote.trim()) return;
+    setState((s) => ({ ...s, checkinNotes: [{ text: checkinNote.trim(), date: todayKey() }, ...s.checkinNotes] }));
+    setCheckinNote("");
+    markActive("checkin");
   };
 
   const addBoundaryNote = () => {
     if (!boundaryNote.trim()) return;
-    setBoundaryNotes((n) => [boundaryNote.trim(), ...n]);
+    setState((s) => ({ ...s, boundaryNotes: [{ text: boundaryNote.trim(), date: todayKey() }, ...s.boundaryNotes] }));
     setBoundaryNote("");
+    markActive("boundaries");
   };
+
+  const fmtDate = (d: string) =>
+    new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
   return (
     <div className="glass rounded-3xl p-6 md:p-8 animate-fade-up">
@@ -131,6 +291,7 @@ export function SelfCarePanel() {
         {tabs.map((t) => {
           const Icon = t.icon;
           const isActive = active === t.id;
+          const streak = computeStreak(state.activity[t.id]);
           return (
             <button
               key={t.id}
@@ -143,6 +304,16 @@ export function SelfCarePanel() {
             >
               <Icon className="w-4 h-4" />
               <span className="hidden sm:inline">{t.label}</span>
+              {streak > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 ${
+                    isActive ? "bg-indigo-deep/15 text-indigo-deep" : "bg-dawn/20 text-foreground/80"
+                  }`}
+                >
+                  <Flame className="w-2.5 h-2.5" />
+                  {streak}
+                </span>
+              )}
             </button>
           );
         })}
@@ -150,14 +321,15 @@ export function SelfCarePanel() {
 
       {active === "rituals" && (
         <div>
+          <StreakStrip dates={state.activity.rituals} label="Rituals" />
           <PromptCard prompts={ritualPrompts} tint="dawn" />
           <div className="space-y-2">
             {defaultRituals.map((r) => {
-              const on = !!rituals[r];
+              const on = !!state.rituals[r];
               return (
                 <button
                   key={r}
-                  onClick={() => toggle(rituals, setRituals, r)}
+                  onClick={() => toggleRitual(r)}
                   className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left text-sm transition-sacred ${
                     on
                       ? "bg-gradient-to-r from-dawn/30 to-lavender/20 border-dawn/40 text-foreground"
@@ -193,11 +365,12 @@ export function SelfCarePanel() {
               </button>
             </div>
           </div>
-          {ritualNotes.length > 0 && (
+          {state.ritualNotes.length > 0 && (
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1 mt-3">
-              {ritualNotes.map((n, i) => (
+              {state.ritualNotes.map((n, i) => (
                 <div key={i} className="rounded-xl bg-background/40 border border-border/40 p-3 text-sm text-foreground/90 animate-fade-up">
-                  {n}
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{fmtDate(n.date)}</p>
+                  {n.text}
                 </div>
               ))}
             </div>
@@ -207,6 +380,7 @@ export function SelfCarePanel() {
 
       {active === "checkin" && (
         <div className="space-y-6">
+          <StreakStrip dates={state.activity.checkin} label="Check-in" />
           <PromptCard prompts={checkinPrompts} tint="rose" />
           <div className="rounded-2xl bg-background/50 p-4 border border-border/60">
             <p className="font-serif italic text-indigo mb-3">How does your inner weather feel?</p>
@@ -216,7 +390,7 @@ export function SelfCarePanel() {
                   key={i}
                   onClick={() => setMood(i)}
                   className={`w-11 h-11 rounded-full flex items-center justify-center transition-sacred ${
-                    mood === i ? "bg-gradient-dawn shadow-soft scale-110" : "opacity-50 hover:opacity-100"
+                    state.mood === i ? "bg-gradient-dawn shadow-soft scale-110" : "opacity-50 hover:opacity-100"
                   }`}
                 >
                   {m}
@@ -232,7 +406,7 @@ export function SelfCarePanel() {
                   key={i}
                   onClick={() => setEnergy(i)}
                   className={`w-11 h-11 rounded-full flex items-center justify-center transition-sacred ${
-                    energy === i ? "bg-gradient-dawn shadow-soft scale-110" : "opacity-50 hover:opacity-100"
+                    state.energy === i ? "bg-gradient-dawn shadow-soft scale-110" : "opacity-50 hover:opacity-100"
                   }`}
                 >
                   {e}
@@ -249,20 +423,39 @@ export function SelfCarePanel() {
               placeholder="What's underneath today's weather? What does it need?"
               className="w-full bg-transparent resize-none outline-none placeholder:text-muted-foreground/60 text-foreground text-sm"
             />
+            <div className="flex justify-end">
+              <button
+                onClick={addCheckinNote}
+                className="px-5 py-2 rounded-full bg-gradient-dawn text-indigo-deep text-sm font-medium hover:opacity-90 transition-sacred"
+              >
+                Save check-in
+              </button>
+            </div>
           </div>
+          {state.checkinNotes.length > 0 && (
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+              {state.checkinNotes.map((n, i) => (
+                <div key={i} className="rounded-xl bg-background/40 border border-border/40 p-3 text-sm text-foreground/90 animate-fade-up">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{fmtDate(n.date)}</p>
+                  {n.text}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {active === "boundaries" && (
         <div>
+          <StreakStrip dates={state.activity.boundaries} label="Rest" />
           <PromptCard prompts={boundaryPrompts} tint="sage" />
           <div className="space-y-2">
             {defaultBoundaries.map((b) => {
-              const on = !!boundaries[b];
+              const on = !!state.boundaries[b];
               return (
                 <button
                   key={b}
-                  onClick={() => toggle(boundaries, setBoundaries, b)}
+                  onClick={() => toggleBoundary(b)}
                   className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left text-sm transition-sacred ${
                     on
                       ? "bg-gradient-to-r from-sage/30 to-dawn/20 border-sage/40 text-foreground"
@@ -299,11 +492,12 @@ export function SelfCarePanel() {
               </button>
             </div>
           </div>
-          {boundaryNotes.length > 0 && (
+          {state.boundaryNotes.length > 0 && (
             <div className="space-y-2 max-h-40 overflow-y-auto pr-1 mt-3">
-              {boundaryNotes.map((n, i) => (
+              {state.boundaryNotes.map((n, i) => (
                 <div key={i} className="rounded-xl bg-background/40 border border-border/40 p-3 text-sm text-foreground/90 animate-fade-up">
-                  {n}
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{fmtDate(n.date)}</p>
+                  {n.text}
                 </div>
               ))}
             </div>
@@ -316,6 +510,7 @@ export function SelfCarePanel() {
 
       {active === "joy" && (
         <div className="space-y-3">
+          <StreakStrip dates={state.activity.joy} label="Joy" />
           <PromptCard prompts={joyPrompts} tint="lavender" />
           <div className="rounded-2xl bg-background/50 p-4 border border-border/60">
             <p className="font-serif italic text-indigo mb-3">
@@ -338,17 +533,18 @@ export function SelfCarePanel() {
             </div>
           </div>
           <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-            {joys.length === 0 && (
+            {state.joys.length === 0 && (
               <p className="text-sm text-muted-foreground italic text-center py-6">
                 Even one tiny spark counts.
               </p>
             )}
-            {joys.map((j, i) => (
+            {state.joys.map((j, i) => (
               <div
                 key={i}
                 className="rounded-xl bg-background/40 border border-border/40 p-3 text-sm text-foreground/90 animate-fade-up"
               >
-                {j}
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{fmtDate(j.date)}</p>
+                {j.text}
               </div>
             ))}
           </div>
