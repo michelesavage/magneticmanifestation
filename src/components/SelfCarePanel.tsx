@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
-import { Sparkles, Smile, Shield, PartyPopper, Check, Lightbulb, Flame } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Sparkles, Smile, Shield, PartyPopper, Check, Lightbulb, Flame, Target, Minus, Plus } from "lucide-react";
 
 type TabId = "rituals" | "checkin" | "boundaries" | "joy";
 
 const tabs = [
-  { id: "rituals" as const, label: "Rituals", icon: Sparkles, tint: "from-dawn to-dawn-glow" },
-  { id: "checkin" as const, label: "Check-in", icon: Smile, tint: "from-rose to-lavender" },
-  { id: "boundaries" as const, label: "Rest", icon: Shield, tint: "from-sage to-dawn" },
-  { id: "joy" as const, label: "Joy", icon: PartyPopper, tint: "from-lavender to-rose" },
+  { id: "rituals" as const, label: "Rituals", icon: Sparkles, tint: "from-dawn to-dawn-glow", unit: "rituals" },
+  { id: "checkin" as const, label: "Check-in", icon: Smile, tint: "from-rose to-lavender", unit: "check-ins" },
+  { id: "boundaries" as const, label: "Rest", icon: Shield, tint: "from-sage to-dawn", unit: "boundaries" },
+  { id: "joy" as const, label: "Joy", icon: PartyPopper, tint: "from-lavender to-rose", unit: "joys" },
 ];
 
 const defaultRituals = [
@@ -54,29 +54,11 @@ const joyPrompts = [
   "What did your younger self love that you could revisit this week?",
 ];
 
-const STORAGE_KEY = "self-care-state-v1";
-
-const todayKey = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+const STORAGE_KEY = "self-care-state-v2";
 
 const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-const computeStreak = (dates: string[]) => {
-  if (!dates.length) return 0;
-  const set = new Set(dates);
-  let streak = 0;
-  const cur = new Date();
-  // If today not logged, start counting from yesterday so streak isn't broken mid-day
-  if (!set.has(dayKey(cur))) cur.setDate(cur.getDate() - 1);
-  while (set.has(dayKey(cur))) {
-    streak++;
-    cur.setDate(cur.getDate() - 1);
-  }
-  return streak;
-};
+const todayKey = () => dayKey(new Date());
 
 const last7Days = () => {
   const arr: string[] = [];
@@ -87,6 +69,17 @@ const last7Days = () => {
     arr.push(dayKey(t));
   }
   return arr;
+};
+
+const computeStreak = (history: Record<string, number>, goal: number) => {
+  let streak = 0;
+  const cur = new Date();
+  if ((history[dayKey(cur)] ?? 0) < goal) cur.setDate(cur.getDate() - 1);
+  while ((history[dayKey(cur)] ?? 0) >= goal) {
+    streak++;
+    cur.setDate(cur.getDate() - 1);
+  }
+  return streak;
 };
 
 type Note = { text: string; date: string };
@@ -100,8 +93,23 @@ type State = {
   ritualNotes: Note[];
   checkinNotes: Note[];
   boundaryNotes: Note[];
-  activity: Record<TabId, string[]>;
+  history: Record<TabId, Record<string, number>>;
+  goals: Record<TabId, number>;
   lastResetDay: string;
+};
+
+const defaultGoals: Record<TabId, number> = {
+  rituals: 3,
+  checkin: 1,
+  boundaries: 2,
+  joy: 1,
+};
+
+const goalCaps: Record<TabId, number> = {
+  rituals: defaultRituals.length,
+  checkin: 3,
+  boundaries: defaultBoundaries.length,
+  joy: 5,
 };
 
 const initialState: State = {
@@ -113,7 +121,8 @@ const initialState: State = {
   ritualNotes: [],
   checkinNotes: [],
   boundaryNotes: [],
-  activity: { rituals: [], checkin: [], boundaries: [], joy: [] },
+  history: { rituals: {}, checkin: {}, boundaries: {}, joy: {} },
+  goals: { ...defaultGoals },
   lastResetDay: todayKey(),
 };
 
@@ -121,8 +130,13 @@ const loadState = (): State => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return initialState;
-    const parsed = { ...initialState, ...JSON.parse(raw) };
-    // Reset daily check-marks at day rollover (preserve activity history)
+    const obj = JSON.parse(raw);
+    const parsed: State = {
+      ...initialState,
+      ...obj,
+      history: { ...initialState.history, ...(obj.history || {}) },
+      goals: { ...initialState.goals, ...(obj.goals || {}) },
+    };
     if (parsed.lastResetDay !== todayKey()) {
       parsed.rituals = {};
       parsed.boundaries = {};
@@ -157,38 +171,108 @@ function PromptCard({ prompts, tint = "dawn" }: { prompts: string[]; tint?: "daw
   );
 }
 
-function StreakStrip({ dates, label }: { dates: string[]; label: string }) {
-  const streak = computeStreak(dates);
-  const set = new Set(dates);
+function GoalCard({
+  label,
+  unit,
+  goal,
+  cap,
+  history,
+  onGoalChange,
+}: {
+  label: string;
+  unit: string;
+  goal: number;
+  cap: number;
+  history: Record<string, number>;
+  onGoalChange: (n: number) => void;
+}) {
   const week = last7Days();
   const today = todayKey();
+  const todayCount = history[today] ?? 0;
+  const streak = computeStreak(history, goal);
+  const hitDays = week.filter((d) => (history[d] ?? 0) >= goal).length;
+  const pct = Math.min(100, Math.round((todayCount / Math.max(goal, 1)) * 100));
+  const maxBar = Math.max(goal, ...week.map((d) => history[d] ?? 0), 1);
+
   return (
-    <div className="rounded-2xl bg-background/40 border border-border/50 p-4 mb-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="rounded-2xl bg-background/40 border border-border/50 p-4 mb-4 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="w-7 h-7 rounded-full bg-gradient-to-br from-dawn to-rose flex items-center justify-center">
-            <Flame className="w-3.5 h-3.5 text-indigo-deep" />
+            <Target className="w-3.5 h-3.5 text-indigo-deep" />
           </span>
           <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground leading-none">{label} streak</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground leading-none">{label} goal</p>
             <p className="font-serif text-lg leading-tight">
-              {streak} {streak === 1 ? "day" : "days"}
+              {goal} {unit} / day
             </p>
           </div>
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onGoalChange(Math.max(1, goal - 1))}
+            disabled={goal <= 1}
+            className="w-7 h-7 rounded-full border border-border/60 flex items-center justify-center text-foreground/80 hover:bg-background/60 disabled:opacity-30 transition-sacred"
+            aria-label="Lower goal"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <span className="font-serif text-base w-6 text-center">{goal}</span>
+          <button
+            onClick={() => onGoalChange(Math.min(cap, goal + 1))}
+            disabled={goal >= cap}
+            className="w-7 h-7 rounded-full border border-border/60 flex items-center justify-center text-foreground/80 hover:bg-background/60 disabled:opacity-30 transition-sacred"
+            aria-label="Raise goal"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between items-baseline mb-1.5">
+          <span className="text-xs text-muted-foreground">Today</span>
+          <span className="text-xs text-foreground/80 font-medium">
+            {todayCount} / {goal}
+          </span>
+        </div>
+        <div className="h-2 rounded-full bg-background/60 overflow-hidden">
+          <div
+            className="h-full bg-gradient-dawn transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between items-baseline mb-2">
+          <span className="text-xs text-muted-foreground">Last 7 days</span>
+          <span className="text-[11px] text-muted-foreground/80 inline-flex items-center gap-1">
+            {hitDays}/7 hit · <Flame className="w-3 h-3" />
+            {streak}d
+          </span>
+        </div>
+        <div className="flex items-end justify-between gap-1.5 h-20">
           {week.map((d) => {
-            const on = set.has(d);
+            const count = history[d] ?? 0;
+            const hit = count >= goal;
+            const h = Math.max(6, Math.round((count / maxBar) * 72));
             const isToday = d === today;
             return (
-              <div key={d} className="flex flex-col items-center gap-1">
-                <span
-                  className={`w-5 h-5 rounded-full border transition-sacred ${
-                    on
-                      ? "bg-gradient-dawn border-transparent shadow-soft"
-                      : "bg-background/30 border-border/50"
-                  } ${isToday ? "ring-2 ring-dawn/50 ring-offset-1 ring-offset-background" : ""}`}
-                />
+              <div key={d} className="flex flex-col items-center gap-1 flex-1">
+                <div className="flex-1 w-full flex items-end justify-center">
+                  <div
+                    className={`w-full rounded-t-md transition-all ${
+                      hit
+                        ? "bg-gradient-dawn shadow-soft"
+                        : count > 0
+                          ? "bg-foreground/20"
+                          : "bg-background/60 border border-border/40"
+                    } ${isToday ? "ring-1 ring-dawn/60" : ""}`}
+                    style={{ height: `${h}px` }}
+                    title={`${count} on ${d}`}
+                  />
+                </div>
                 <span className="text-[10px] text-muted-foreground/70">
                   {new Date(d).toLocaleDateString(undefined, { weekday: "narrow" })}
                 </span>
@@ -197,7 +281,6 @@ function StreakStrip({ dates, label }: { dates: string[]; label: string }) {
           })}
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground/80 italic">Last 7 days · highlighted = tended</p>
     </div>
   );
 }
@@ -212,6 +295,8 @@ export function SelfCarePanel() {
   const [checkinNote, setCheckinNote] = useState("");
   const [boundaryNote, setBoundaryNote] = useState("");
 
+  const [checkinTouchedToday, setCheckinTouchedToday] = useState({ mood: false, energy: false });
+
   useEffect(() => {
     setState(loadState());
     setHydrated(true);
@@ -221,62 +306,92 @@ export function SelfCarePanel() {
     if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state, hydrated]);
 
-  const markActive = (tab: TabId) =>
+  const incrementHistory = (tab: TabId, delta = 1) => {
     setState((s) => {
       const today = todayKey();
-      if (s.activity[tab].includes(today)) return s;
-      return { ...s, activity: { ...s.activity, [tab]: [...s.activity[tab], today] } };
+      const cur = s.history[tab][today] ?? 0;
+      return {
+        ...s,
+        history: { ...s.history, [tab]: { ...s.history[tab], [today]: Math.max(0, cur + delta) } },
+      };
     });
+  };
+
+  const setGoal = (tab: TabId, n: number) =>
+    setState((s) => ({ ...s, goals: { ...s.goals, [tab]: n } }));
 
   const toggleRitual = (key: string) => {
-    setState((s) => ({ ...s, rituals: { ...s.rituals, [key]: !s.rituals[key] } }));
-    markActive("rituals");
+    setState((s) => {
+      const next = { ...s.rituals, [key]: !s.rituals[key] };
+      const count = Object.values(next).filter(Boolean).length;
+      return {
+        ...s,
+        rituals: next,
+        history: { ...s.history, rituals: { ...s.history.rituals, [todayKey()]: count } },
+      };
+    });
   };
 
   const toggleBoundary = (key: string) => {
-    setState((s) => ({ ...s, boundaries: { ...s.boundaries, [key]: !s.boundaries[key] } }));
-    markActive("boundaries");
+    setState((s) => {
+      const next = { ...s.boundaries, [key]: !s.boundaries[key] };
+      const count = Object.values(next).filter(Boolean).length;
+      return {
+        ...s,
+        boundaries: next,
+        history: { ...s.history, boundaries: { ...s.history.boundaries, [todayKey()]: count } },
+      };
+    });
   };
 
-  const setMood = (i: number) => {
+  const handleMood = (i: number) => {
     setState((s) => ({ ...s, mood: i }));
-    markActive("checkin");
+    if (!checkinTouchedToday.mood) {
+      incrementHistory("checkin", 1);
+      setCheckinTouchedToday((t) => ({ ...t, mood: true }));
+    }
   };
-  const setEnergy = (i: number) => {
+  const handleEnergy = (i: number) => {
     setState((s) => ({ ...s, energy: i }));
-    markActive("checkin");
+    if (!checkinTouchedToday.energy) {
+      incrementHistory("checkin", 1);
+      setCheckinTouchedToday((t) => ({ ...t, energy: true }));
+    }
   };
 
   const addJoy = () => {
     if (!joyDraft.trim()) return;
     setState((s) => ({ ...s, joys: [{ text: joyDraft.trim(), date: todayKey() }, ...s.joys] }));
     setJoyDraft("");
-    markActive("joy");
+    incrementHistory("joy", 1);
   };
 
   const addRitualNote = () => {
     if (!ritualNote.trim()) return;
     setState((s) => ({ ...s, ritualNotes: [{ text: ritualNote.trim(), date: todayKey() }, ...s.ritualNotes] }));
     setRitualNote("");
-    markActive("rituals");
   };
 
   const addCheckinNote = () => {
     if (!checkinNote.trim()) return;
     setState((s) => ({ ...s, checkinNotes: [{ text: checkinNote.trim(), date: todayKey() }, ...s.checkinNotes] }));
     setCheckinNote("");
-    markActive("checkin");
+    incrementHistory("checkin", 1);
   };
 
   const addBoundaryNote = () => {
     if (!boundaryNote.trim()) return;
     setState((s) => ({ ...s, boundaryNotes: [{ text: boundaryNote.trim(), date: todayKey() }, ...s.boundaryNotes] }));
     setBoundaryNote("");
-    markActive("boundaries");
   };
 
   const fmtDate = (d: string) =>
     new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  const tabMeta = useMemo(
+    () => Object.fromEntries(tabs.map((t) => [t.id, t])) as Record<TabId, typeof tabs[number]>,
+    [],
+  );
 
   return (
     <div className="glass rounded-3xl p-6 md:p-8 animate-fade-up">
@@ -291,7 +406,7 @@ export function SelfCarePanel() {
         {tabs.map((t) => {
           const Icon = t.icon;
           const isActive = active === t.id;
-          const streak = computeStreak(state.activity[t.id]);
+          const streak = computeStreak(state.history[t.id], state.goals[t.id]);
           return (
             <button
               key={t.id}
@@ -321,7 +436,14 @@ export function SelfCarePanel() {
 
       {active === "rituals" && (
         <div>
-          <StreakStrip dates={state.activity.rituals} label="Rituals" />
+          <GoalCard
+            label="Rituals"
+            unit={tabMeta.rituals.unit}
+            goal={state.goals.rituals}
+            cap={goalCaps.rituals}
+            history={state.history.rituals}
+            onGoalChange={(n) => setGoal("rituals", n)}
+          />
           <PromptCard prompts={ritualPrompts} tint="dawn" />
           <div className="space-y-2">
             {defaultRituals.map((r) => {
@@ -380,7 +502,14 @@ export function SelfCarePanel() {
 
       {active === "checkin" && (
         <div className="space-y-6">
-          <StreakStrip dates={state.activity.checkin} label="Check-in" />
+          <GoalCard
+            label="Check-in"
+            unit={tabMeta.checkin.unit}
+            goal={state.goals.checkin}
+            cap={goalCaps.checkin}
+            history={state.history.checkin}
+            onGoalChange={(n) => setGoal("checkin", n)}
+          />
           <PromptCard prompts={checkinPrompts} tint="rose" />
           <div className="rounded-2xl bg-background/50 p-4 border border-border/60">
             <p className="font-serif italic text-indigo mb-3">How does your inner weather feel?</p>
@@ -388,7 +517,7 @@ export function SelfCarePanel() {
               {moods.map((m, i) => (
                 <button
                   key={i}
-                  onClick={() => setMood(i)}
+                  onClick={() => handleMood(i)}
                   className={`w-11 h-11 rounded-full flex items-center justify-center transition-sacred ${
                     state.mood === i ? "bg-gradient-dawn shadow-soft scale-110" : "opacity-50 hover:opacity-100"
                   }`}
@@ -404,7 +533,7 @@ export function SelfCarePanel() {
               {energies.map((e, i) => (
                 <button
                   key={i}
-                  onClick={() => setEnergy(i)}
+                  onClick={() => handleEnergy(i)}
                   className={`w-11 h-11 rounded-full flex items-center justify-center transition-sacred ${
                     state.energy === i ? "bg-gradient-dawn shadow-soft scale-110" : "opacity-50 hover:opacity-100"
                   }`}
@@ -447,7 +576,14 @@ export function SelfCarePanel() {
 
       {active === "boundaries" && (
         <div>
-          <StreakStrip dates={state.activity.boundaries} label="Rest" />
+          <GoalCard
+            label="Rest"
+            unit={tabMeta.boundaries.unit}
+            goal={state.goals.boundaries}
+            cap={goalCaps.boundaries}
+            history={state.history.boundaries}
+            onGoalChange={(n) => setGoal("boundaries", n)}
+          />
           <PromptCard prompts={boundaryPrompts} tint="sage" />
           <div className="space-y-2">
             {defaultBoundaries.map((b) => {
@@ -510,7 +646,14 @@ export function SelfCarePanel() {
 
       {active === "joy" && (
         <div className="space-y-3">
-          <StreakStrip dates={state.activity.joy} label="Joy" />
+          <GoalCard
+            label="Joy"
+            unit={tabMeta.joy.unit}
+            goal={state.goals.joy}
+            cap={goalCaps.joy}
+            history={state.history.joy}
+            onGoalChange={(n) => setGoal("joy", n)}
+          />
           <PromptCard prompts={joyPrompts} tint="lavender" />
           <div className="rounded-2xl bg-background/50 p-4 border border-border/60">
             <p className="font-serif italic text-indigo mb-3">
