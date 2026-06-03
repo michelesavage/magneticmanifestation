@@ -1,33 +1,82 @@
-import { useState } from "react";
-import { Sparkles, Eye, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Eye, RefreshCw, Sparkles } from "lucide-react";
+import { useUser } from "@/contexts/UserContext";
 
-type Entry = { id: string; type: "gratitude" | "abundance" | "reframe"; text: string };
+type EntryType = "gratitude" | "abundance" | "reframe";
 
-const prompts = {
+type Entry = {
+  id: string;
+  type: EntryType;
+  text: string;
+  date: string;
+};
+
+const prompts: Record<EntryType, string> = {
   gratitude: "What are you most grateful for in this moment?",
   abundance: "Where do you see abundance flowing toward you today?",
   reframe: "What obstacle is secretly redirecting you somewhere better?",
 };
 
 const tabs = [
-  { id: "gratitude", label: "Gratitude", icon: Sparkles, tint: "from-dawn to-dawn-glow" },
-  { id: "abundance", label: "Abundance", icon: Eye, tint: "from-rose to-lavender" },
-  { id: "reframe", label: "Reframe", icon: RefreshCw, tint: "from-sage to-dawn" },
-] as const;
+  {
+    id: "gratitude" as const,
+    label: "Gratitude",
+    icon: Sparkles,
+    tint: "from-dawn to-dawn-glow",
+  },
+  {
+    id: "abundance" as const,
+    label: "Abundance",
+    icon: Eye,
+    tint: "from-rose to-lavender",
+  },
+  {
+    id: "reframe" as const,
+    label: "Reframe",
+    icon: RefreshCw,
+    tint: "from-sage to-dawn",
+  },
+];
 
 export function MindsetRewire() {
-  const [active, setActive] = useState<"gratitude" | "abundance" | "reframe">("gratitude");
+  const { storageKey } = useUser();
+  const key = storageKey("mindset-entries");
+
+  const [active, setActive] = useState<EntryType>("gratitude");
   const [draft, setDraft] = useState("");
-  const [entries, setEntries] = useState<Entry[]>([
-    { id: "1", type: "gratitude", text: "The way morning light touched my face." },
-    { id: "2", type: "abundance", text: "Three unexpected messages from people I love." },
-  ]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) setEntries(JSON.parse(saved));
+    } catch {
+      // ignore
+    }
+    setHydrated(true);
+  }, [key]);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem(key, JSON.stringify(entries));
+  }, [entries, hydrated, key]);
 
   const filtered = entries.filter((e) => e.type === active);
 
   const submit = () => {
     if (!draft.trim()) return;
-    setEntries((e) => [{ id: crypto.randomUUID(), type: active, text: draft.trim() }, ...e]);
+    setEntries((e) => [
+      {
+        id: crypto.randomUUID(),
+        type: active,
+        text: draft.trim(),
+        date: new Date().toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        }),
+      },
+      ...e,
+    ]);
     setDraft("");
   };
 
@@ -35,7 +84,9 @@ export function MindsetRewire() {
     <div className="glass rounded-3xl p-6 md:p-8 animate-fade-up">
       <div className="mb-6">
         <h2 className="font-serif text-3xl">Rewire</h2>
-        <p className="text-sm text-muted-foreground mt-1">Train the eye to see what's already yours.</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Train the eye to see what's already yours.
+        </p>
       </div>
 
       <div className="flex gap-2 mb-5 p-1 bg-muted/60 rounded-2xl">
@@ -47,7 +98,9 @@ export function MindsetRewire() {
               key={t.id}
               onClick={() => setActive(t.id)}
               className={`flex-1 px-3 py-2.5 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 transition-sacred ${
-                isActive ? `bg-gradient-to-br ${t.tint} text-indigo-deep shadow-soft` : "text-muted-foreground hover:text-foreground"
+                isActive
+                  ? `bg-gradient-to-br ${t.tint} text-indigo-deep shadow-soft`
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Icon className="w-4 h-4" /> {t.label}
@@ -83,7 +136,15 @@ export function MindsetRewire() {
             </p>
           )}
           {filtered.map((e) => (
-            <div key={e.id} className="rounded-xl bg-background/40 border border-border/40 p-3 text-sm text-foreground/90 animate-fade-up">
+            <div
+              key={e.id}
+              className="rounded-xl bg-background/40 border border-border/40 p-3 text-sm text-foreground/90 animate-fade-up"
+            >
+              {e.date && (
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  {e.date}
+                </p>
+              )}
               {e.text}
             </div>
           ))}
