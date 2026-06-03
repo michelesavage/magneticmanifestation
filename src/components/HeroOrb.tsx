@@ -1,8 +1,29 @@
 import heroGlow from "@/assets/hero-glow.jpg";
 import { Sparkles } from "lucide-react";
 
-export function HeroOrb({ step, intention }: { step: number; intention: string }) {
-  const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+export function HeroOrb({
+  step,
+  intention,
+  userName,
+  dayCount,
+}: {
+  step: number;
+  intention: string;
+  userName: string;
+  dayCount: number;
+}) {
+  const today = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
     <header className="relative overflow-hidden rounded-[2rem] glass-elevated">
@@ -20,15 +41,17 @@ export function HeroOrb({ step, intention }: { step: number; intention: string }
           <Sparkles className="w-3 h-3" /> {today}
         </div>
         <h1 className="font-serif text-5xl md:text-7xl leading-[1.05] text-indigo-deep mb-4">
-          Become the woman <br />
-          <span className="text-gradient-dawn italic">already living it.</span>
+          {getGreeting()},
+          <br />
+          <span className="text-gradient-dawn italic">{userName}.</span>
         </h1>
         <p className="max-w-xl mx-auto text-foreground/80 text-base md:text-lg">
           {intention}
         </p>
         <div className="mt-8 inline-flex items-center gap-3 px-5 py-2.5 rounded-full bg-indigo-deep/90 text-primary-foreground text-sm">
           <span className="w-2 h-2 rounded-full bg-dawn-glow animate-pulse-glow" />
-          Currently walking <span className="font-serif italic text-dawn-glow">Step {step}</span>
+          Day {dayCount} ·{" "}
+          <span className="font-serif italic text-dawn-glow">Step {step}</span>
         </div>
       </div>
     </header>
