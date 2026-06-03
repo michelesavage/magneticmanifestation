@@ -5,12 +5,11 @@ import { MindsetRewire } from "@/components/MindsetRewire";
 import { StepsJourney } from "@/components/StepsJourney";
 import { DailyAffirmation } from "@/components/DailyAffirmation";
 import { SelfCarePanel } from "@/components/SelfCarePanel";
-import { Moon, Heart } from "lucide-react";
+import { useUser } from "@/contexts/UserContext";
+import { LogOut, Sparkles } from "lucide-react";
 
 const Index = () => {
-  const currentStep = 4;
-  const intention =
-    "A daily ritual to regulate your body, rewire your mind, and walk the 12 Steps of Magnetic Manifestation.";
+  const { user, dayCount, logout } = useUser();
 
   return (
     <main className="min-h-screen">
@@ -19,17 +18,30 @@ const Index = () => {
           <div className="w-9 h-9 rounded-full bg-gradient-dawn shadow-glow animate-pulse-glow" />
           <span className="font-serif text-xl tracking-wide">Magnetic</span>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Heart className="w-4 h-4" />
-          <span>Day 14 of your becoming</span>
-          <Moon className="w-4 h-4 ml-2" />
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <Sparkles className="w-4 h-4 text-dawn-glow" />
+          <span className="font-serif italic">
+            Day {dayCount} of your becoming
+          </span>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="ml-1 p-1.5 rounded-full hover:bg-muted transition-sacred"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </nav>
 
       <div className="container max-w-6xl pb-20 space-y-6">
-        <HeroOrb step={currentStep} intention={intention} />
+        <HeroOrb
+          step={user?.currentStep ?? 1}
+          intention={user?.intention ?? ""}
+          userName={user?.name ?? ""}
+          dayCount={dayCount}
+        />
 
-        <DailyAffirmation />
+        <DailyAffirmation dayCount={dayCount} />
 
         <HabitsRing />
 
@@ -39,7 +51,7 @@ const Index = () => {
           <SelfCarePanel />
         </div>
 
-        <StepsJourney currentStep={currentStep} />
+        <StepsJourney />
 
         <footer className="text-center pt-8 pb-2">
           <p className="font-serif italic text-muted-foreground">
